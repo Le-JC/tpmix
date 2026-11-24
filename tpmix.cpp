@@ -2113,11 +2113,13 @@ public:
     auto *stripsSizer = mkSection(this, "Output", head);
     head->addStretch(1);
     bool isOTG = (pid == 0x8755 || pid == 0x8756);
-    int numStrips = (pid == 0x8752) ? 1 : (isOTG ? 2 : 3);
+    bool isE4x4 = (pid == 0x8754);
+    int numStrips = (pid == 0x8752) ? 1 : ((isOTG || isE4x4) ? 2 : 3);
 
     for (int i = 0; i < numStrips; ++i) {
       QString name = i == 0 ? "Output 1+2"
-                     : i == 1 ? (isOTG ? "Mobile OUT" : "Disconnected")
+                     : i == 1 ? (isOTG ? "Mobile OUT"
+                                       : (isE4x4 ? "Output 3+4" : "Disconnected"))
                               : "S/PDIF OUT";
       BusStrip s = mkBusStrip(this, name, 6, minGain, maxGain);
       lbTitle[i] = s.title;
@@ -2128,7 +2130,15 @@ public:
       slOutputL[i] = s.faderL;
       slOutputR[i] = s.faderR;
 
-      if (i == 0) {
+      if (isE4x4) {
+        // E4X4: MON (headphone) and LINE (jack) toggle per output pair
+        btnPhoneIcon[i] = new CustomButton(s.panel, "", true, QSize(28, 20), COL_OUT_ON, ICON_HEADPHONE);
+        btnTRS[i] = new CustomButton(s.panel, "", true, QSize(28, 20), COL_OUT_ON, ICON_JACK);
+        place(btnPhoneIcon[i], 12, 222, 32, 20);
+        place(btnTRS[i], 56, 222, 32, 20);
+        btnPhoneIcon[i]->SetValue(true);
+        btnTRS[i]->SetValue(true);
+      } else if (i == 0) {
         // pushButton_HP / _LINEOUT (/ _AUX), rgb(66,97,192) when on
         bool aux = pid == 0x8754 || pid == 0x8756;
         btnPhoneIcon[0] = new CustomButton(s.panel, "", true, QSize(28, 20), COL_OUT_ON, ICON_HEADPHONE);
@@ -2289,7 +2299,10 @@ protected:
   int numOutputs() const {
     return (hid->pid == 0x8752)
                ? 1
-               : ((hid->pid == 0x8755 || hid->pid == 0x8756) ? 2 : 3);
+               : ((hid->pid == 0x8755 || hid->pid == 0x8756 ||
+                   hid->pid == 0x8754)
+                      ? 2
+                      : 3);
   }
 
   void setOutputVol(int32_t ch) {
@@ -2770,7 +2783,10 @@ TPMixer::TPMixer() : QWidget(nullptr) {
                     panelOutputs->slOutputR[i]})
       f->onChange = [this, i](int) { OnOutputVolume(ID_OUTPUT_VOL_B + i); };
     panelOutputs->btnLink[i]->onClick = [this, i](bool) { OnLinkToggle(ID_OUTPUT_LINK + i); };
-    if (i == 0) {
+    if (hid->pid == 0x8754) {
+      panelOutputs->btnPhoneIcon[i]->onClick = [this, i](bool on) { OnOutputToggle(ID_OUTPUT_MON + i, on); };
+      panelOutputs->btnTRS[i]->onClick = [this, i](bool on) { OnOutputToggle(ID_OUTPUT_LINE + i, on); };
+    } else if (i == 0) {
       panelOutputs->btnPhoneIcon[0]->onClick = [this](bool on) { OnOutputToggle(ID_OUTPUT_MON, on); };
       panelOutputs->btnTRS[0]->onClick = [this](bool on) { OnOutputToggle(ID_OUTPUT_LINE, on); };
       if (panelOutputs->btnAUX[0])
@@ -3052,8 +3068,8 @@ void TPMixer::scbUpdateLevels(uint16_t ch16, int32_t val) {
           panelOutputs->btnTRS[0]->SetValue(val != 0);
         hid->settings[0x3703] = val;
       } else if (subCh == 4) {
-        if (panelOutputs->btnAUX[0] && hid->pid == 0x8754)
-          panelOutputs->btnAUX[0]->SetValue(val != 0);
+        if (hid->pid == 0x8754 && panelOutputs->btnTRS[1])
+          panelOutputs->btnTRS[1]->SetValue(val != 0);
         hid->settings[0x3704] = val;
       } else if (subCh == 5) {
         if (panelOutputs->btnAUX[0] && hid->pid == 0x8756)
@@ -3553,14 +3569,16 @@ void TPMixer::refreshOutputUi() {
 
     if (linked) {
       panelOutputs->slOutput[i]->SetValue(gainDBL);
-      if (i > 0)
+      if (i > 0 && panelOutputs->ckMute[i])
         panelOutputs->ckMute[i]->SetValue(mutedL);
     } else {
       panelOutputs->slOutputL[i]->SetValue(gainDBL);
       panelOutputs->slOutputR[i]->SetValue(gainDBR);
       if (i > 0) {
-        panelOutputs->ckMuteL[i]->SetValue(mutedL);
-        panelOutputs->ckMuteR[i]->SetValue(mutedR);
+        if (panelOutputs->ckMuteL[i])
+          panelOutputs->ckMuteL[i]->SetValue(mutedL);
+        if (panelOutputs->ckMuteR[i])
+          panelOutputs->ckMuteR[i]->SetValue(mutedR);
       }
     }
 
@@ -3568,8 +3586,10 @@ void TPMixer::refreshOutputUi() {
     panelOutputs->slOutputL[i]->setVisible(!linked);
     panelOutputs->slOutputR[i]->setVisible(!linked);
     if (i > 0) {
-      panelOutputs->combBtns[i]->setVisible(linked);
-      panelOutputs->splitBtns[i]->setVisible(!linked);
+      if (panelOutputs->combBtns[i])
+        panelOutputs->combBtns[i]->setVisible(linked);
+      if (panelOutputs->splitBtns[i])
+        panelOutputs->splitBtns[i]->setVisible(!linked);
     }
 
     panelOutputs->lbOutVolVal[i]->setText(
@@ -3604,6 +3624,10 @@ void TPMixer::refreshOutputUi() {
   setFromKey(panelOutputs->btnPhoneIcon[0], 0x3701);
   setFromKey(panelOutputs->btnTRS[0], 0x3703);
   setFromKey(panelOutputs->btnAUX[0], hid->pid == 0x8756 ? 0x3705 : 0x3704);
+  if (hid->pid == 0x8754) {
+    setFromKey(panelOutputs->btnPhoneIcon[1], 0x3702);
+    setFromKey(panelOutputs->btnTRS[1], 0x3704);
+  }
 }
 
 void TPMixer::OnInputGain(int32_t id) {
@@ -3962,22 +3986,26 @@ void TPMixer::OnLinkToggle(int32_t id) {
     hid->settings[0x9300 + ch] = linked ? 1 : 0;
     if (linked) {
       p->slOutput[ch]->SetValue(p->slOutputL[ch]->GetValue());
-      if (ch > 0)
+      if (ch > 0 && p->ckMute[ch] && p->ckMuteL[ch])
         p->ckMute[ch]->SetValue(p->ckMuteL[ch]->GetValue());
     } else {
       p->slOutputL[ch]->SetValue(p->slOutput[ch]->GetValue());
       p->slOutputR[ch]->SetValue(p->slOutput[ch]->GetValue());
       if (ch > 0) {
-        p->ckMuteL[ch]->SetValue(p->ckMute[ch]->GetValue());
-        p->ckMuteR[ch]->SetValue(p->ckMute[ch]->GetValue());
+        if (p->ckMuteL[ch] && p->ckMute[ch])
+          p->ckMuteL[ch]->SetValue(p->ckMute[ch]->GetValue());
+        if (p->ckMuteR[ch] && p->ckMute[ch])
+          p->ckMuteR[ch]->SetValue(p->ckMute[ch]->GetValue());
       }
     }
     p->slOutput[ch]->setVisible(linked);
     p->slOutputL[ch]->setVisible(!linked);
     p->slOutputR[ch]->setVisible(!linked);
     if (ch > 0) {
-      p->combBtns[ch]->setVisible(linked);
-      p->splitBtns[ch]->setVisible(!linked);
+      if (p->combBtns[ch])
+        p->combBtns[ch]->setVisible(linked);
+      if (p->splitBtns[ch])
+        p->splitBtns[ch]->setVisible(!linked);
     }
     setOutputVol(ch);
   }
