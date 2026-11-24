@@ -1559,6 +1559,17 @@ public:
       cbOTGMode->setChecked(m_hid->settings.contains(otgReg) ? m_hid->settings[otgReg] : 0);
       rightCol->addWidget(cbOTGMode);
     }
+    if (pid == 0x8754) {
+      // not captured on E4X4 yet: shown for reference only, never sent
+      for (QWidget *w : {(QWidget *)choiceBrightness, (QWidget *)cbAutoStandby,
+                         (QWidget *)cbOTGMode})
+        if (w) {
+          w->setEnabled(false);
+          w->setToolTip("Not verified on the E4X4 yet; tpmix does not send this setting.");
+        }
+      rightCol->addWidget(mkLabel(this, "Device settings are not supported on the E4X4 yet.",
+                                  8.5, false, QColor(140, 140, 140)));
+    }
     rightCol->addStretch(1);
     cols->addLayout(rightCol, 1);
     mainSizer->addLayout(cols);
@@ -1613,6 +1624,8 @@ private:
   void OnDeviceChange() {
     if (NULL == m_hid->getHandle())
       return;
+    if (m_hid->pid == 0x8754)
+      return; // E4X4: device settings not captured, never send them
 
     int sel = choiceBrightness->currentIndex();
     if (sel >= 0) {
@@ -3344,16 +3357,8 @@ void TPMixer::pushGuiStateToDevice() {
   }
 
   // 7. Push Device Standby, OTG Mode, and LED Brightness Settings
-  if (hid->pid == 0x8754) {
-    if (hid->settings.contains(0x3901)) {
-      hid->setDeviceSetting(0x39, 0x01, hid->settings[0x3901]);
-      pause();
-    }
-    if (hid->settings.contains(0x3a01)) {
-      hid->setDeviceSetting(0x3a, 0x01, hid->settings[0x3a01]);
-      pause();
-    }
-  } else {
+  // (skipped on the E4X4: these registers were never captured on it)
+  if (hid->pid != 0x8754) {
     if (hid->settings.contains(0x1101)) {
       hid->setDeviceSetting(0x11, 0x01, hid->settings[0x1101]);
       pause();
@@ -3362,10 +3367,10 @@ void TPMixer::pushGuiStateToDevice() {
       hid->setDeviceSetting(0x11, 0x03, hid->settings[0x1103]);
       pause();
     }
-  }
-  if (hid->settings.contains(0x1104)) {
-    hid->setDeviceSetting(0x11, 0x04, hid->settings[0x1104]);
-    pause();
+    if (hid->settings.contains(0x1104)) {
+      hid->setDeviceSetting(0x11, 0x04, hid->settings[0x1104]);
+      pause();
+    }
   }
 }
 
