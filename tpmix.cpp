@@ -3310,6 +3310,17 @@ bool TPMixer::loadSettings() {
     if (key == 0x9999) {
       g_uiScale = std::clamp((double)value / 100.0, 0.5, 3.0);
     } else if (!isMeterKey(key)) {
+      if (hid->pid == 0x8754) {
+        uint8_t kch = key >> 8, ksub = key & 0xff;
+        bool guiOnly = key >= 0x9000 ||
+                       (kch >= 0x21 && kch <= 0x24 && ksub >= 0x06 &&
+                        ksub <= 0x09);
+        if (!guiOnly && !ToppingHID::isAllowedE4x4Write(key, value)) {
+          printf("[settings] ignoring %04x = %08x (invalid for E4X4)\n", key,
+                 (uint32_t)value);
+          continue;
+        }
+      }
       hid->settings[key] = value;
       callAfter([this, key, value] { scbUpdateLevels(key, value); });
     }
@@ -3345,7 +3356,8 @@ void TPMixer::pushGuiStateToDevice() {
         hid->setInputMon(i, panelInputs->cbMon[i]->GetValue());
         pause();
       }
-      if (panelInputs->cb48V[i]) {
+      // never restore 48V phantom power on the E4X4 (device safety)
+      if (panelInputs->cb48V[i] && hid->pid != 0x8754) {
         hid->setInput48V(i, panelInputs->cb48V[i]->GetValue());
         pause();
       }
@@ -3713,10 +3725,13 @@ void TPMixer::OnInputGain(int32_t id) {
 
   switch (id & (~0xf)) {
   case ID_INPUT_GAIN:
-  case ID_INPUT_SOLO:
   case ID_INPUT_MUTE:
   case ID_INPUT_PHASE:
     sendInput(ch, true);
+    break;
+  case ID_INPUT_SOLO:
+    // solo = mute the others: on E4X4 re-send every input
+    sendInput(panelInputs->fourMono ? -1 : ch, true);
     break;
   case ID_INPUT_48V:
     if (panelInputs->cb48V[ch])
