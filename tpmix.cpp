@@ -1512,24 +1512,21 @@ public:
       m_hid->settings[0x9001] = 1;
 
       choiceBrightness->setCurrentIndex(1);
-      m_hid->setDeviceSetting(0x11, 0x04, 1);
       m_hid->settings[0x1104] = 1;
 
       int standbyReg = (m_hid->pid == 0x8754) ? 0x3901 : 0x1101;
-      m_hid->setDeviceSetting(standbyReg >> 8, standbyReg & 0xff, 1);
       m_hid->settings[standbyReg] = 1;
       cbAutoStandby->setChecked(true);
 
       if (cbOTGMode) {
         int otgReg = (m_hid->pid == 0x8754) ? 0x3a01 : 0x1103;
-        m_hid->setDeviceSetting(otgReg >> 8, otgReg & 0xff, 0);
         m_hid->settings[otgReg] = 0;
         cbOTGMode->setChecked(false);
       }
 
       onReset();
       QMessageBox::information(this, "Reset Success",
-                               "Settings reset to defaults and applied to device!");
+                               "Settings reset to defaults (nothing was sent to the device).");
     });
   }
 
@@ -1576,17 +1573,20 @@ class DownloadDialog : public QDialog {
 public:
   QRadioButton *rbOption1;
   QRadioButton *rbOption3;
+  QRadioButton *rbPushAll;
 
   DownloadDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle("Download");
-    resize(380, 150);
+    resize(420, 175);
     auto *mainSizer = vbox(this, 10, 6);
     mainSizer->addSpacing(10);
     rbOption1 = new QRadioButton("Save current workspace and download to device", this);
     rbOption3 = new QRadioButton("Download to device only", this);
+    rbPushAll = new QRadioButton("Push full workspace to device (overwrites all mixer settings)", this);
     rbOption1->setChecked(true);
     mainSizer->addWidget(rbOption1);
     mainSizer->addWidget(rbOption3);
+    mainSizer->addWidget(rbPushAll);
     auto *btnRow = hbox(nullptr, 0, 10);
     btnRow->addStretch(1);
     auto *btnCancel = new QPushButton("Cancel", this);
@@ -2724,9 +2724,6 @@ TPMixer::TPMixer() : QWidget(nullptr) {
 
   startHidReader();
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  if (NULL != hid->getHandle()) {
-    pushGuiStateToDevice();
-  }
 }
 
 // ----------------------------------------------------------------------------
@@ -3760,6 +3757,19 @@ void TPMixer::OnLoad() {
                           "Failed to download to device: Device is not connected.");
     return;
   }
+  if (dlg.rbPushAll->isChecked()) {
+    auto answer = QMessageBox::warning(
+        this, "Push workspace",
+        "This sends every input, mixer, output and loopback value shown in "
+        "tpmix to the device, overwriting its current state.\n\nContinue?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes)
+      return;
+    pushGuiStateToDevice();
+    QMessageBox::information(this, "Push workspace",
+                             "Workspace pushed to device (not saved to device memory).");
+    return;
+  }
   if (dlg.rbOption1->isChecked()) {
     // Option 1: Save current workspace and download to device
     saveSettings();
@@ -3779,9 +3789,6 @@ void TPMixer::OnResetDefaults() {
   refreshMixerUi(-1);
   refreshLoopbackUi();
   refreshOutputUi();
-  if (NULL != hid->getHandle()) {
-    pushGuiStateToDevice();
-  }
   saveSettings();
 }
 
