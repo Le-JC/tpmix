@@ -22,14 +22,16 @@ Fork goal: make tpmix safely edit a **Topping E4X4** (`152a:8754`) mixer config 
 - Save-to-device for E4X4 is `0x11 0x05` (per capture). The original GitLab code's `0x11 0x06` does not persist.
 - Device only pushes switch states and meters; mixer gains/volumes can't be read back. GUI state comes from `~/.config/toppingmixer/toppingmixer.settings` (`%04x %08x` lines), not the device.
 
-## Device-safety gotchas (cause of a past bricked-sounding config)
-- On startup the app calls `pushGuiStateToDevice()` (`TPMixer` constructor, after `loadSettings()`), which writes the entire GUI/default state to the hardware, and `OnResetDefaults()` does too. Treat any write path as hazardous.
-- E4X4 shows 3 output strips, but `setOutputVol(2)` hits `0x3503/0x3603` = phone monitor-mix (0..100) with a gain value. Likely cause of the past distortion; E4X4 output volumes are only `0x31..0x34 sub 03`. `0x35/0x36 sub 01` = output 1+2 / 3+4 source select.
-- Unverified on E4X4, do not write them to an 8754 device without a capture: `0x3901` (standby), `0x3a01` (OTG), `0x1104` (LED), `0x3705`.
-- `initializeSettingsWithDefaults()` routes all 12 sources at 0 dB into every mix bus — loud summed mix if pushed.
-- Phone mix is double-converted: `setPhoneMix()` maps -100..100 → 0..100, but stored/pushed values are already raw, so each push drifts toward 100.
-- 48V restore is intentionally disabled; keep it that way.
-- Input UI is laid out for 3 columns (IN1, IN2, IN3+4 linked); 48V/MON/INST only exist for the first two columns — E4X4 has 4 independent inputs.
+## Device-safety rules (a past build corrupted the E4X4 config)
+- Nothing may write to the device implicitly. Startup and "Reset Defaults" send nothing; a full write only happens via Download dialog → "Push full workspace" (confirmed). Keep it that way.
+- E4X4 write guard: `ToppingHID::isAllowedE4x4Write()` in `enqueue()` is the allow-list derived from `topping.e4x4.hid.md`; refused packets print `[blocked] ...` and are not stored. To support a new E4X4 register, add a capture to the .md first, then extend the guard. `loadSettings()` drops saved values the guard would refuse.
+- Blocked on E4X4 until captured: `0x39xx` standby, `0x3axx` OTG, `0x1101/1103/1104`, `0x3705`. Their Settings-dialog widgets are disabled.
+- `0x3503/0x3603` are phone monitor-mix (raw 0..100, 50 = center), not volumes. `setPhoneMix()` takes -100..100; stored settings are raw.
+- Never send or restore 48V except from the 48V button handler.
+- Gate E4X4 behaviour on `pid == 0x8754` (`panelInputs->fourMono` for inputs); other models' code paths must stay unchanged.
+- E4X4 layout: 4 mono inputs (INST only IN1/IN2), 2 output strips (1+2: `3501`, `3103/3203`, MON `3701`, LINE `3703`; 3+4: `3601`, `3303/3403`, `3702`, `3704`).
 
-## Device access
+## Device access / testing
+Test with `./tpmix --dry-run` first (packets printed as `[dry-run] >> <hex>`, comparable with the capture).
+
 hidraw needs a udev rule (`KERNEL=="hidraw*", ATTRS{idVendor}=="152a", TAG+="uaccess"`) or the app silently falls into demo mode.
