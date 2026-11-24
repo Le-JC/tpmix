@@ -394,8 +394,81 @@ public:
     return crc ^ 0x785A;
   }
 
+  // E4X4 (0x8754): allow only registers/values seen in topping.e4x4.hid.md
+  static bool isAllowedE4x4Write(uint16_t key, int32_t val) {
+    auto gainOK = [](int32_t v, int maxDB) {
+      return std::llabs((long long)v) <=
+             (long long)(0x02000000 * std::pow(10.0, maxDB / 20.0)) + 16;
+    };
+    uint8_t ch = key >> 8;
+    uint8_t sub = key & 0xff;
+    // Inputs 1..4
+    if (ch >= 0x21 && ch <= 0x24) {
+      switch (sub) {
+      case 0x01: // MON
+      case 0x02: // 48V
+      case 0x03: // INST
+        return val == 0 || val == 1;
+      case 0x05: // Input gain
+        return gainOK(val, 30);
+      default:
+        return false;
+      }
+    }
+    // Mix buses A..D, L/R
+    if (ch >= 0x61 && ch <= 0x68) {
+      if (sub >= 0x01 && sub <= 0x0c) // 12 sources
+        return gainOK(val, 6);
+      return false;
+    }
+    // Outputs 1..4 volume
+    if (ch >= 0x31 && ch <= 0x34) {
+      return sub == 0x03 && gainOK(val, 20);
+    }
+    // Output 1+2 / 3+4 routing + phones
+    if (ch == 0x35 || ch == 0x36) {
+      switch (sub) {
+      case 0x01: // Source select
+        return val >= 1 && val <= 14;
+      case 0x02: // Phone gain boost
+        return val == 0 || val == 1;
+      case 0x03: // Phone monitor mix
+        return val >= 0 && val <= 100;
+      default:
+        return false;
+      }
+    }
+    // Phone / line switches
+    if (ch == 0x37) {
+      if (sub >= 0x01 && sub <= 0x04)
+        return val == 0 || val == 1;
+      return false;
+    }
+    // Loopback volume
+    if (ch >= 0x51 && ch <= 0x56) {
+      return sub == 0x03 && gainOK(val, 20);
+    }
+    // Loopback source select
+    if (ch >= 0x57 && ch <= 0x59) {
+      return sub == 0x01 && val >= 1 && val <= 14;
+    }
+    // Save to device memory
+    if (key == 0x1105)
+      return val == 1;
+    return false;
+  }
+
   void enqueue(bool exec = true, bool toSave = true) {
     int res = 0;
+    if (pid == 0x8754) {
+      uint16_t key = read16BE(&buf[5]);
+      int32_t val = (int32_t)read32BE(&buf[7]);
+      if (!isAllowedE4x4Write(key, val)) {
+        printf("[blocked] E4X4 write %04x = %08x (not in captured protocol)\n",
+               key, (uint32_t)val);
+        return; // neither sent nor stored in settings
+      }
+    }
     if (pid == 0x8752 || pid == 0x8755 || pid == 0x8756) {
       uint16_t crc = calculate_crc16(buf, 11);
       buf[11] = (crc >> 8) & 0xFF;
