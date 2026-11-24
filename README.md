@@ -76,6 +76,10 @@ Then run `sudo udevadm control --reload && sudo udevadm trigger` and replug the 
 - Settings > "Launch at login (in tray)" adds `~/.config/autostart/tpmix.desktop`, which runs `tpmix --tray`.
 
 
+### Dry run
+
+`tpmix --dry-run` (or `TPMIX_DRY_RUN=1 tpmix`) reads the device normally but never writes to it: every packet that would be sent is printed to stdout as `[dry-run] >> <32 hex chars>`, comparable with `topping.e4x4.hid.md`.
+
 ## Design
 
 ### HW Signal path

@@ -60,6 +60,7 @@ uint32_t read32BE(uint8_t *buf) {
 }
 
 double g_uiScale = 1.0;
+bool g_dryRun = false; // --dry-run / TPMIX_DRY_RUN: log HID writes, never send them
 
 // Gain calculation class
 class Gain {
@@ -403,7 +404,12 @@ public:
       buf[11] = 0x00;
       buf[12] = 0x00;
     }
-    if (NULL != handle && exec) {
+    if (exec && g_dryRun) {
+      printf("[dry-run] >> ");
+      for (int i = 0; i < 16; ++i)
+        printf("%02x", buf[i]);
+      printf("\n");
+    } else if (NULL != handle && exec) {
       res = hid_write(handle, buf, 16);
     }
     if (toSave) {
@@ -2495,6 +2501,8 @@ TPMixer::TPMixer() : QWidget(nullptr) {
       deviceName = "Topping E2X2 OTG";
     setWindowTitle(qs(deviceName + " Control Center"));
   }
+  if (g_dryRun)
+    setWindowTitle(windowTitle() + " [DRY RUN]");
   setWindowIcon(appIcon());
 
   if (QSystemTrayIcon::isSystemTrayAvailable()) {
@@ -3918,6 +3926,14 @@ int main(int argc, char **argv) {
   app.setQuitOnLastWindowClosed(false);
   bool startInTray = app.arguments().contains("--tray") &&
                      QSystemTrayIcon::isSystemTrayAvailable();
+
+  // dry-run must be known before TPMixer is constructed, since it sends
+  // packets during startup
+  QByteArray dryRunEnv = qgetenv("TPMIX_DRY_RUN");
+  g_dryRun = app.arguments().contains("--dry-run") ||
+             (!dryRunEnv.isEmpty() && dryRunEnv != "0");
+  if (g_dryRun)
+    printf("tpmix: DRY-RUN mode, HID packets are logged, not sent\n");
 
   int ret;
   {
