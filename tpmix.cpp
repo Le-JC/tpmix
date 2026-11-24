@@ -1777,6 +1777,9 @@ public:
   QWidget *combBtns = nullptr;
   QWidget *splitBtns = nullptr;
 
+  // E4X4: 4 independent mono columns (no IN 3+4 stereo/link column)
+  bool fourMono = false;
+
   int32_t PeaksI[N_INPUTS];
   int32_t inLevelVal[N_INPUTS];
 
@@ -1787,12 +1790,15 @@ public:
     auto *colsSizer = mkSection(this, "Input", head);
     head->addStretch(1);
 
-    int numCols = (pid == 0x8754) ? 3 : ((pid == 0x8752 || pid == 0x8756) ? 2 : 1);
+    fourMono = pid == 0x8754;
+    int numCols = fourMono ? 4 : ((pid == 0x8752 || pid == 0x8756) ? 2 : 1);
     bool isE1x2 = pid == 0x8755;
 
     for (int col = 0; col < numCols; ++col) {
       QString colName = col == 0 ? (isE1x2 ? "Analog IN" : "IN 1")
                                  : (col == 1 ? "IN 2" : "IN 3+4");
+      if (fourMono)
+        colName = QString("IN %1").arg(col + 1);
       QWidget *sp = mkStrip(this, lbTitleI[col], colName, 274);
       lbGainVal[col] = mkHiddenLabel(sp);
 
@@ -1801,12 +1807,14 @@ public:
                                        COL_BLUE, ICON_NONE, BTN_TEXT);
       place(lbPeaksI[col], 4, 27, 36, 14);
 
-      if (col < 2) {
+      if (col < 2 || fourMono) {
         // Input form: meter at x16, buttons at x60, gain knob below
         slGainI[col] = new FaderStrip(sp, minGain, maxGain, FaderStrip::FS_INPUT);
         cbMon[col] = mkBtn(sp, "MON", COL_MON, 60, 44, 30, 16);
         cb48V[col] = mkBtn(sp, "48V", COL_48V, 60, 64, 30, 16);
-        cbInst[col] = mkBtn(sp, "INST", COL_INST, 60, 84, 30, 16);
+        // E4X4: INST (Hi-Z) only on the front combo jacks IN 1/IN 2
+        if (col < 2)
+          cbInst[col] = mkBtn(sp, "INST", COL_INST, 60, 84, 30, 16);
         cbSolo[col] = mkBtn(sp, "SOLO", COL_SOLO, 60, 116, 30, 16);
         cbMute[col] = mkBtn(sp, "MUTE", COL_MUTE, 60, 136, 30, 16);
         cbPhase[col] = mkBtn(sp, QString::fromUtf8("ø"), COL_PHASE, 60, 156, 30, 16);
@@ -2411,6 +2419,51 @@ protected:
     int32_t begin = ch, end = ch + 1;
     bool anySolo = false;
 
+    if (panelInputs->fourMono) {
+      // E4X4: 4 independent mono inputs, column == channel. Never sends 48V
+      // (only the 48V button does) and INST only where the button exists.
+      for (int32_t i = 0; i < panelInputs->N_INPUTS; i++) {
+        if (panelInputs->cbSolo[i])
+          anySolo |= panelInputs->cbSolo[i]->GetValue();
+      }
+      if (ch < 0) {
+        begin = 0;
+        end = panelInputs->N_INPUTS;
+      }
+      for (int32_t i = begin; i < end && i < panelInputs->N_INPUTS; i++) {
+        bool mon = false;
+        if (panelInputs->cbMon[i]) {
+          mon = panelInputs->cbMon[i]->GetValue();
+          hid->setInputMon(i, mon);
+        }
+        if (panelInputs->cbInst[i])
+          hid->setInputInst(i, panelInputs->cbInst[i]->GetValue());
+
+        bool mute = panelInputs->cbMute[i] && panelInputs->cbMute[i]->GetValue();
+        bool solo = panelInputs->cbSolo[i] && panelInputs->cbSolo[i]->GetValue();
+        bool phase =
+            panelInputs->cbPhase[i] && panelInputs->cbPhase[i]->GetValue();
+        int32_t gainDB =
+            panelInputs->slGainI[i] ? panelInputs->slGainI[i]->GetValue() : 0;
+
+        int32_t gainVal = gain->getMonoGain(gainDB, mute, solo, anySolo, phase);
+        hid->setInputGainiI32(i, gainVal, hw);
+
+        uint16_t keyBase = hid->getHidInputChannel(i) << 8;
+        hid->settings[keyBase | 0x01] = mon ? 1 : 0;
+        if (panelInputs->cbInst[i]) {
+          hid->settings[keyBase | 0x03] =
+              panelInputs->cbInst[i]->GetValue() ? 1 : 0;
+        }
+        hid->settings[keyBase | 0x05] = gainVal;
+        hid->settings[keyBase | 0x06] = mute ? 1 : 0;
+        hid->settings[keyBase | 0x07] = solo ? 1 : 0;
+        hid->settings[keyBase | 0x08] = phase ? 1 : 0;
+        hid->settings[keyBase | 0x09] = gainDB;
+      }
+      return;
+    }
+
     int col = ch;
     if (ch >= 2)
       col = 2;
@@ -2693,10 +2746,10 @@ TPMixer::TPMixer() : QWidget(nullptr) {
       f->onChange = [this, id](int) { OnInputGain(id); };
   };
   int numCols = (hid->pid == 0x8754)
-                    ? 3
+                    ? 4
                     : ((hid->pid == 0x8752 || hid->pid == 0x8756) ? 2 : 1);
   for (int col = 0; col < numCols; ++col) {
-    if (col < 2) {
+    if (col < 2 || panelInputs->fourMono) {
       bindIn(panelInputs->cbMon[col], ID_INPUT_MON + col);
       bindIn(panelInputs->cb48V[col], ID_INPUT_48V + col);
       bindIn(panelInputs->cbInst[col], ID_INPUT_INST + col);
@@ -2859,7 +2912,7 @@ void TPMixer::scbUpdateLevels(uint16_t ch16, int32_t val) {
     int32_t logicCh = getLogicInputChannel(ch, hid->pid);
     if (logicCh < 0 || logicCh >= panelInputs->N_INPUTS)
       return;
-    int colMap = (logicCh >= 2) ? 2 : logicCh;
+    int colMap = (logicCh >= 2 && !panelInputs->fourMono) ? 2 : logicCh;
     bool inputLinked =
         (panelInputs->btnLink) ? panelInputs->btnLink->GetValue() : true;
     uint16_t keyBase = hid->getHidInputChannel(logicCh) << 8;
@@ -2885,7 +2938,7 @@ void TPMixer::scbUpdateLevels(uint16_t ch16, int32_t val) {
       break;
     case 0x04: {
       panelInputs->inLevelVal[logicCh] = level01DB;
-      if (logicCh < 2) {
+      if (logicCh < 2 || panelInputs->fourMono) {
         if (panelInputs->slGainI[logicCh]) {
           panelInputs->slGainI[logicCh]->SetMeterLevels(level01DB, -960);
         }
@@ -2946,7 +2999,7 @@ void TPMixer::scbUpdateLevels(uint16_t ch16, int32_t val) {
     case 0x05:
       {
         auto [muted, phase, gainDB] = gain2dB(val);
-        if (colMap < 2) {
+        if (colMap < 2 || panelInputs->fourMono) {
           if (panelInputs->slGainI[colMap])
             panelInputs->slGainI[colMap]->SetValue(gainDB);
         } else {
@@ -2984,7 +3037,7 @@ void TPMixer::scbUpdateLevels(uint16_t ch16, int32_t val) {
       hid->settings[keyBase | 0x08] = val;
       break;
     case 0x09:
-      if (colMap < 2) {
+      if (colMap < 2 || panelInputs->fourMono) {
         if (panelInputs->slGainI[colMap])
           panelInputs->slGainI[colMap]->SetValue(val);
       } else {
@@ -3178,7 +3231,7 @@ void TPMixer::HidReader(hid_device *handle) {
   } else {
     while (!toStopHidReader) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
-      int activeCols = (hid->pid == 0x8754) ? 3 : 2;
+      int activeCols = (hid->pid == 0x8754) ? 4 : 2;
       for (int i = 0; i < activeCols; ++i) {
         int valLeft =
             panelInputs->LEVEL_MIN + rand() % (panelInputs->LEVEL_RANGE);
@@ -3380,7 +3433,7 @@ void TPMixer::refreshInputsUi() {
     return;
 
   int numCols = (hid->pid == 0x8754)
-                    ? 3
+                    ? 4
                     : ((hid->pid == 0x8752 || hid->pid == 0x8756) ? 2 : 1);
 
   bool inputLinked =
@@ -3388,7 +3441,7 @@ void TPMixer::refreshInputsUi() {
 
   for (int col = 0; col < numCols; ++col) {
     int logicCh = col;
-    int colMap = (logicCh >= 2) ? 2 : logicCh;
+    int colMap = (logicCh >= 2 && !panelInputs->fourMono) ? 2 : logicCh;
     uint16_t keyBase = hid->getHidInputChannel(logicCh) << 8;
     auto setBtn = [&](CustomButton *b, uint16_t key) {
       if (b && hid->settings.contains(key))
@@ -3409,7 +3462,7 @@ void TPMixer::refreshInputsUi() {
       int32_t val = hid->settings[keyGain];
       if ((keyGain & 0xff) == 0x05)
         val = std::get<2>(gain2dB(val));
-      if (colMap < 2) {
+      if (colMap < 2 || panelInputs->fourMono) {
         if (panelInputs->slGainI[colMap]) {
           panelInputs->slGainI[colMap]->SetValue(val);
         }
@@ -3609,12 +3662,12 @@ void TPMixer::refreshOutputUi() {
 void TPMixer::OnInputGain(int32_t id) {
   int32_t ch = id & 0x0f;
 
-  int colMap = (ch >= 2) ? 2 : ch;
+  int colMap = (ch >= 2 && !panelInputs->fourMono) ? 2 : ch;
   bool inputLinked =
       (panelInputs->btnLink) ? panelInputs->btnLink->GetValue() : true;
 
   if (panelInputs->lbGainVal[colMap]) {
-    if (colMap < 2) {
+    if (colMap < 2 || panelInputs->fourMono) {
       int32_t gainDB = panelInputs->slGainI[colMap]
                            ? panelInputs->slGainI[colMap]->GetValue()
                            : 0;
@@ -3887,6 +3940,8 @@ void TPMixer::OnLinkToggle(int32_t id) {
 
   if (cls == ID_INPUT_LINK) {
     PanelInputs *p = panelInputs;
+    if (!p->btnLink) // E4X4: no linked IN 3+4 column
+      return;
     bool linked = p->btnLink->GetValue();
     hid->settings[0x9000] = linked ? 1 : 0;
     if (linked) {
