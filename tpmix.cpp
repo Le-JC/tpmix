@@ -3343,7 +3343,8 @@ void TPMixer::pushGuiStateToDevice() {
       pause();
     }
     if (hid->settings.contains(keyMix)) {
-      hid->setPhoneMix(i, hid->settings[keyMix]);
+      // settings hold the raw 0..100 device value; setPhoneMix() expects -100..100
+      hid->setPhoneMix(i, (hid->settings[keyMix] - 50) * 2);
       pause();
     }
   }
