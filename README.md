@@ -26,6 +26,7 @@ tpmix is a GUI Control Program for Topping Audio Interfaces' Mixer, for Linux, m
 - manual load/save, and save to device
 - Qt 6 UI laid out and styled after the official TOPPING Professional Control Center
 - System tray icon, optional launch at login (in tray)
+- Hotplug: unplugging/replugging the interface while tpmix runs reconnects automatically (same model); nothing is written to the device on reconnect
 
 ### Works not
 

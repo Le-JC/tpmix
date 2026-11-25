@@ -507,6 +507,19 @@ public:
   };
 
   hid_device *getHandle() { return handle; }
+  // reopen the same model (pid) after an unplug; never switches model
+  bool reopen() {
+    if (NULL != handle)
+      return true;
+    handle = hid_open(vid, pid, NULL);
+    return NULL != handle;
+  }
+  void closeHandle() {
+    if (NULL != handle) {
+      hid_close(handle);
+      handle = NULL;
+    }
+  }
   ~ToppingHID() {
     if (NULL != handle) {
       hid_close(handle);
@@ -2364,6 +2377,7 @@ protected:
   bool closed = false;
   bool quitting = false;
   QSystemTrayIcon *tray = nullptr;
+  QTimer *reconnectTimer = nullptr;
 
   void shutdown();
 
@@ -2378,7 +2392,11 @@ protected:
   void scbUpdateLevels(uint16_t ch16, int32_t val);
   void pushGuiStateToDevice();
   void HidReader(hid_device *handle);
+  void onDeviceLost();
+  void tryReconnect();
+  void updateWindowTitle();
   void startHidReader() {
+    toStopHidReader = false;
     thReader = new std::thread(&TPMixer::HidReader, this, hid->getHandle());
   };
   void stopHidReader() {
@@ -2729,18 +2747,7 @@ TPMixer::TPMixer() : QWidget(nullptr) {
   hid = new ToppingHID();
   gain = new Gain();
 
-  if (NULL != hid->getHandle()) {
-    std::string deviceName = "Topping E4X4";
-    if (hid->pid == 0x8755)
-      deviceName = "Topping E1X2 OTG";
-    else if (hid->pid == 0x8752)
-      deviceName = "Topping E2X2";
-    else if (hid->pid == 0x8756)
-      deviceName = "Topping E2X2 OTG";
-    setWindowTitle(qs(deviceName + " Control Center"));
-  }
-  if (g_dryRun)
-    setWindowTitle(windowTitle() + " [DRY RUN]");
+  updateWindowTitle();
   setWindowIcon(appIcon());
 
   if (QSystemTrayIcon::isSystemTrayAvailable()) {
@@ -2969,7 +2976,13 @@ TPMixer::TPMixer() : QWidget(nullptr) {
   resize(DESIGN_W * g_uiScale, DESIGN_H * g_uiScale);
   RescaleUI(g_uiScale);
 
+  reconnectTimer = new QTimer(this);
+  reconnectTimer->setInterval(1500);
+  connect(reconnectTimer, &QTimer::timeout, this, [this] { tryReconnect(); });
+
   startHidReader();
+  if (NULL == hid->getHandle())
+    reconnectTimer->start();
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
@@ -3313,6 +3326,51 @@ void TPMixer::scbUpdateLevels(uint16_t ch16, int32_t val) {
 }
 
 // ----------------------------------------------------------------------------
+// Window title / hotplug
+// ----------------------------------------------------------------------------
+
+void TPMixer::updateWindowTitle() {
+  std::string t = "TOPPING Professional Control Center";
+  if (NULL != hid->getHandle()) {
+    std::string deviceName = "Topping E4X4";
+    if (hid->pid == 0x8755)
+      deviceName = "Topping E1X2 OTG";
+    else if (hid->pid == 0x8752)
+      deviceName = "Topping E2X2";
+    else if (hid->pid == 0x8756)
+      deviceName = "Topping E2X2 OTG";
+    t = deviceName + " Control Center";
+  } else {
+    t += " (no device)";
+  }
+  if (g_dryRun)
+    t += " [DRY RUN]";
+  setWindowTitle(qs(t));
+  if (tray)
+    tray->setToolTip(windowTitle());
+}
+
+void TPMixer::onDeviceLost() {
+  stopHidReader(); // reader thread already left its loop; join it
+  hid->closeHandle();
+  printf("tpmix: device disconnected, waiting for it to come back\n");
+  updateWindowTitle();
+  if (reconnectTimer && !reconnectTimer->isActive())
+    reconnectTimer->start();
+}
+
+void TPMixer::tryReconnect() {
+  if (!hid->reopen())
+    return;
+  reconnectTimer->stop();
+  stopHidReader(); // stops the demo-meter thread if running
+  startHidReader();
+  printf("tpmix: device connected\n");
+  updateWindowTitle();
+  // Do NOT push any state to the device here (AGENTS.md safety rule).
+}
+
+// ----------------------------------------------------------------------------
 // Thread reader polling
 // ----------------------------------------------------------------------------
 
@@ -3322,6 +3380,7 @@ void TPMixer::HidReader(hid_device *handle) {
     while (!toStopHidReader) {
       int res = hid_read_timeout(handle, bufread, 16, 100);
       if (res < 0) {
+        callAfter([this] { onDeviceLost(); });
         break;
       }
       if (res >= 11) {
@@ -3996,6 +4055,8 @@ void TPMixer::shutdown() {
   if (closed)
     return;
   closed = true;
+  if (reconnectTimer)
+    reconnectTimer->stop();
   stopHidReader();
   bool autoSave =
       hid->settings.contains(0x9001) ? (hid->settings[0x9001] != 0) : true;
