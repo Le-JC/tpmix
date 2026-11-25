@@ -84,6 +84,7 @@ Then run `sudo udevadm control --reload && sudo udevadm trigger` and replug the 
 - Settings > "Keep running in system tray when closed" (default on): closing the window hides it to the tray; quit from the tray menu. When off, there is no tray icon and closing the window exits tpmix.
 - `tpmix --tray` starts hidden in the tray without opening the window, whatever that setting is (falls back to a normal window if the desktop has no tray).
 - Settings > "Launch at login (in tray)" adds `~/.config/autostart/tpmix.desktop`, which runs `tpmix --tray`.
+- SIGTERM / SIGINT / SIGHUP (window-manager quit, Ctrl+C, closing the terminal) quit tpmix cleanly, like the tray menu "Quit", so the workspace is saved.
 
 
 ### Dry run

@@ -17,7 +17,9 @@
 */
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cmath>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -34,6 +36,8 @@
 
 #include <hidapi/hidapi.h>
 #include <inttypes.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 // Helper functions for HID buffer manipulation
 void write32BE(uint8_t *buf, int32_t v32) {
@@ -63,6 +67,15 @@ uint32_t read32BE(uint8_t *buf) {
 double g_uiScale = 1.0;
 bool g_dryRun = false; // --dry-run / TPMIX_DRY_RUN: log HID writes, never send them
 bool g_startInTray = false; // --tray: start hidden, tray behaviour forced on
+
+static int g_sigFd[2] = {-1, -1};
+
+// async-signal-safe: only write one byte; the Qt side does the real work
+static void quitSignalHandler(int) {
+  char c = 1;
+  ssize_t r = ::write(g_sigFd[0], &c, 1);
+  (void)r;
+}
 
 // Gain calculation class
 class Gain {
@@ -2323,6 +2336,10 @@ public:
   TPMixer();
 
   bool trayActive() const { return tray && (g_startInTray || trayEnabledPref()); }
+  void requestQuit() {
+    quitting = true;
+    qApp->quit();
+  }
   void applyTrayPref() {
     if (tray)
       tray->setVisible(g_startInTray || trayEnabledPref());
@@ -2736,10 +2753,8 @@ TPMixer::TPMixer() : QWidget(nullptr) {
       activateWindow();
     };
     connect(menu->addAction("Show"), &QAction::triggered, this, showWin);
-    connect(menu->addAction("Quit"), &QAction::triggered, this, [this] {
-      quitting = true;
-      qApp->quit();
-    });
+    connect(menu->addAction("Quit"), &QAction::triggered, this,
+            [this] { requestQuit(); });
     tray->setContextMenu(menu);
     connect(tray, &QSystemTrayIcon::activated, this,
             [this, showWin](QSystemTrayIcon::ActivationReason r) {
@@ -4204,6 +4219,24 @@ int main(int argc, char **argv) {
   int ret;
   {
     TPMixer frame;
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, g_sigFd) == 0) {
+      auto *sn = new QSocketNotifier(g_sigFd[1], QSocketNotifier::Read, &frame);
+      QObject::connect(sn, &QSocketNotifier::activated, &frame, [&frame, sn] {
+        sn->setEnabled(false);
+        char c;
+        ssize_t r = ::read(g_sigFd[1], &c, 1);
+        (void)r;
+        printf("tpmix: quit signal received, saving and exiting\n");
+        frame.requestQuit();
+      });
+      struct sigaction sa = {};
+      sa.sa_handler = quitSignalHandler;
+      sigemptyset(&sa.sa_mask);
+      sa.sa_flags = SA_RESTART;
+      sigaction(SIGTERM, &sa, nullptr);
+      sigaction(SIGINT, &sa, nullptr);
+      sigaction(SIGHUP, &sa, nullptr);
+    }
     if (!startInTray)
       frame.show();
     ret = app.exec();
