@@ -72,6 +72,13 @@ The E4X4 records as one 10-channel source (IN1–4, then Loopback 1–6). `packa
 
 Then `systemctl --user restart pipewire`.
 
+Good to know:
+
+- **Pro Audio profile required.** The drop-in captures from `alsa_input.usb-Topping_E4x4_Pre-00.pro-input-0`, which only exists with the "Pro Audio" profile (pavucontrol → Configuration). With another profile the three sources exist but stay silent.
+- **Always listed.** The loopback sources are present even when the E4X4 is unplugged; they are silent until it is back, then PipeWire reconnects them automatically.
+- **Channel order:** AUX0–3 = IN1–4, AUX4/5 = Loopback 1+2, AUX6/7 = Loopback 3+4, AUX8/9 = Loopback 5+6.
+- **Disable:** remove the file (or the package) and restart PipeWire.
+
 ### From source
 
 ```
