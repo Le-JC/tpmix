@@ -8,6 +8,7 @@ Fork goal: make tpmix safely edit a **Topping E4X4** (`152a:8754`) mixer config 
 - `tpmix` binary is **committed**; `make` overwrites it. Don't commit a rebuilt binary unless asked.
 - `topping.e4x4.hid.md`: the only real E4X4 USB capture. It is the source of truth for E4X4 register IDs; code constants not found there are guesses from OTG models.
 - `packaging/` + `.github/workflows/appimage.yml`: AppImage build, CI runs only on `v*` tags / manual dispatch.
+- `packaging/arch/PKGBUILD` (`tpmix-git`) clones GitHub `main`, not the local tree: packaging changes only build with `makepkg` after they are pushed. Never `makepkg -i`/`sudo` from an agent.
 
 ## Build / verify
 - `make` (plain `g++` + `pkg-config Qt6Widgets` + `-lhidapi-hidraw`, C++20, needs g++ ≥ 13 for `std::format`).
