@@ -21,6 +21,7 @@ Fork goal: make tpmix safely edit a **Topping E4X4** (`152a:8754`) mixer config 
 - E4X4: bytes 11–12 are `00 00`. E1X2/E2X2 models instead put a CRC16 there (`enqueue()` branches on `pid`). Keep that branch intact.
 - Gains are linear fixed-point: `0x02000000` = 0 dB, negative = phase inverted, 0 = mute.
 - Save-to-device for E4X4 is `0x11 0x05` (per capture). The original GitLab code's `0x11 0x06` does not persist.
+- Sample rate / buffer size (shown in the Windows app) are USB-audio driver settings, not HID: on Linux PipeWire owns them (`clock.rate`, `clock.allowed-rates`, `clock.quantum`). User decision: do not add them to tpmix.
 - Device only pushes switch states and meters; mixer gains/volumes can't be read back. GUI state comes from `~/.config/toppingmixer/toppingmixer.settings` (`%04x %08x` lines), not the device.
 
 ## Device-safety rules (a past build corrupted the E4X4 config)
