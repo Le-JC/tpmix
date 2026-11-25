@@ -2,11 +2,11 @@ post_install() {
   udevadm control --reload 2>/dev/null || true
   udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
   echo "==> Replug your Topping interface if tpmix starts in demo mode."
-  echo "==> E4X4 loopback sources: restart PipeWire to load them (systemctl --user restart pipewire)."
+  echo "==> E4X4 PipeWire devices (loopbacks/playbacks): restart PipeWire to load them (systemctl --user restart pipewire)."
 }
 
 post_upgrade() {
   udevadm control --reload 2>/dev/null || true
   udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
-  echo "==> E4X4 loopback sources: restart PipeWire to load them (systemctl --user restart pipewire)."
+  echo "==> E4X4 PipeWire devices (loopbacks/playbacks): restart PipeWire to load them (systemctl --user restart pipewire)."
 }

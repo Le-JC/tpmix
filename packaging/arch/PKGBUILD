@@ -8,7 +8,7 @@ url="https://github.com/Le-JC/tpmix"
 license=('GPL-3.0-or-later')
 depends=('qt6-base' 'hidapi' 'gcc-libs' 'glibc')
 makedepends=('git' 'pkgconf')
-optdepends=('pipewire: E4X4 loopback channels as separate stereo sources')
+optdepends=('pipewire: E4X4 loopbacks and playbacks as separate stereo devices')
 provides=('tpmix')
 conflicts=('tpmix')
 source=("tpmix::git+https://github.com/Le-JC/tpmix.git")
@@ -33,7 +33,7 @@ package() {
   install -Dm644 packaging/tpmix.desktop "$pkgdir/usr/share/applications/tpmix.desktop"
   install -Dm644 packaging/tpmix.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/tpmix.svg"
   install -Dm644 packaging/arch/70-topping.rules "$pkgdir/usr/lib/udev/rules.d/70-topping.rules"
-  install -Dm644 packaging/pipewire/90-tpmix-e4x4-loopbacks.conf "$pkgdir/usr/share/pipewire/pipewire.conf.d/90-tpmix-e4x4-loopbacks.conf"
+  install -Dm644 packaging/pipewire/90-tpmix-e4x4-channels.conf "$pkgdir/usr/share/pipewire/pipewire.conf.d/90-tpmix-e4x4-channels.conf"
   install -Dm644 LICENSE.md "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 topping.e4x4.hid.md "$pkgdir/usr/share/doc/$pkgname/topping.e4x4.hid.md"

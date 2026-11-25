@@ -63,9 +63,12 @@ makepkg -si
 
 This builds the latest `main` (`tpmix-git`) and installs the binary, desktop entry, icon and the udev rule from "Device access" below, so no manual udev setup is needed.
 
-### E4X4 loopbacks as PipeWire sources
+### E4X4 channels as PipeWire devices
 
-The E4X4 records as one 10-channel source (IN1–4, then Loopback 1–6). `packaging/pipewire/90-tpmix-e4x4-loopbacks.conf` splits the loopbacks into three stereo sources, "E4x4 Loopback 1+2 / 3+4 / 5+6", usable from OBS, Discord, etc. It needs the "Pro Audio" profile on the E4X4 card.
+With the "Pro Audio" profile the E4X4 shows up as one 10-channel input (IN1–4, then Loopback 1–6) and one 8-channel output (Playback 1–8). `packaging/pipewire/90-tpmix-e4x4-channels.conf` splits them into named stereo devices usable from OBS, Discord, pavucontrol, etc.:
+
+- Inputs (sources): "E4x4 Loopback 1+2", "E4x4 Loopback 3+4", "E4x4 Loopback 5+6".
+- Outputs (sinks): "E4x4 Playback 1/2", "E4x4 Playback 3/4", "E4x4 Playback 5/6", "E4x4 Playback 7/8". What you play there reaches the matching Playback strip in tpmix's mixer.
 
 - Arch package: installed to `/usr/share/pipewire/pipewire.conf.d/`.
 - Manually: copy it to `~/.config/pipewire/pipewire.conf.d/`.
@@ -74,9 +77,9 @@ Then `systemctl --user restart pipewire`.
 
 Good to know:
 
-- **Pro Audio profile required.** The drop-in captures from `alsa_input.usb-Topping_E4x4_Pre-00.pro-input-0`, which only exists with the "Pro Audio" profile (pavucontrol → Configuration). With another profile the three sources exist but stay silent.
-- **Always listed.** The loopback sources are present even when the E4X4 is unplugged; they are silent until it is back, then PipeWire reconnects them automatically.
-- **Channel order:** AUX0–3 = IN1–4, AUX4/5 = Loopback 1+2, AUX6/7 = Loopback 3+4, AUX8/9 = Loopback 5+6.
+- **Pro Audio profile required.** The drop-in captures from `alsa_input.usb-Topping_E4x4_Pre-00.pro-input-0` and plays to `alsa_output.usb-Topping_E4x4_Pre-00.pro-output-0`, which only exist with the "Pro Audio" profile (pavucontrol → Configuration). With another profile the devices exist but stay silent.
+- **Always listed.** The loopback sources and playback sinks are present even when the E4X4 is unplugged; they are silent until it is back, then PipeWire reconnects them automatically.
+- **Channel order:** AUX0–3 = IN1–4, AUX4/5 = Loopback 1+2, AUX6/7 = Loopback 3+4, AUX8/9 = Loopback 5+6. Output: AUX0/1 = Playback 1/2, AUX2/3 = 3/4, AUX4/5 = 5/6, AUX6/7 = 7/8.
 - **Disable:** remove the file (or the package) and restart PipeWire.
 
 ### From source
