@@ -409,8 +409,8 @@ public:
       case 0x02: // 48V
       case 0x03: // INST
         return val == 0 || val == 1;
-      case 0x05: // Input gain
-        return gainOK(val, 30);
+      case 0x05: // Input gain (official app: 0..+20 dB)
+        return gainOK(val, 20);
       default:
         return false;
       }
@@ -1753,6 +1753,7 @@ public:
   constexpr static int32_t LEVEL_RANGE = LEVEL_MAX - LEVEL_MIN;
   constexpr static int32_t minGain = -60;
   constexpr static int32_t maxGain = 30;
+  int32_t maxGainI = maxGain;
 
   QLabel *lbTitleI[N_INPUTS] = {};
   CustomButton *lbPeaksI[N_INPUTS] = {};
@@ -1784,6 +1785,7 @@ public:
   int32_t inLevelVal[N_INPUTS];
 
   PanelInputs(QWidget *parent, uint16_t pid = 0x8754) : QWidget(parent) {
+    maxGainI = (pid == 0x8754) ? 20 : maxGain;
     std::fill(std::begin(PeaksI), std::end(PeaksI), LEVEL_MIN);
     std::fill(std::begin(inLevelVal), std::end(inLevelVal), LEVEL_MIN);
     QHBoxLayout *head;
@@ -1809,7 +1811,7 @@ public:
 
       if (col < 2 || fourMono) {
         // Input form: meter at x16, buttons at x60, gain knob below
-        slGainI[col] = new FaderStrip(sp, minGain, maxGain, FaderStrip::FS_INPUT);
+        slGainI[col] = new FaderStrip(sp, minGain, maxGainI, FaderStrip::FS_INPUT);
         cbMon[col] = mkBtn(sp, "MON", COL_MON, 60, 44, 30, 16);
         cb48V[col] = mkBtn(sp, "48V", COL_48V, 60, 64, 30, 16);
         // E4X4: INST (Hi-Z) only on the front combo jacks IN 1/IN 2
@@ -1818,17 +1820,17 @@ public:
         cbSolo[col] = mkBtn(sp, "SOLO", COL_SOLO, 60, 116, 30, 16);
         cbMute[col] = mkBtn(sp, "MUTE", COL_MUTE, 60, 136, 30, 16);
         cbPhase[col] = mkBtn(sp, QString::fromUtf8("ø"), COL_PHASE, 60, 156, 30, 16);
-        auto *knob = new KnobControl(sp, "Gain", 0, maxGain, 0, QSize(64, 80), true);
+        auto *knob = new KnobControl(sp, "Gain", 0, maxGainI, 0, QSize(64, 80), true);
         knob->SetRingWidth(5);
         place(knob, 18, 192, 64, 80);
         slGainI[col]->AttachKnob(knob);
       } else {
         // Stereo channel IN 3+4, laid out like the original InputMobile form
-        slGainI[2] = new FaderStrip(sp, minGain, maxGain, FaderStrip::FS_INPUT);
+        slGainI[2] = new FaderStrip(sp, minGain, maxGainI, FaderStrip::FS_INPUT);
         slGainI[2]->SetMeterSlot(0);
-        slGainI[3] = new FaderStrip(sp, minGain, maxGain, FaderStrip::FS_INPUT);
+        slGainI[3] = new FaderStrip(sp, minGain, maxGainI, FaderStrip::FS_INPUT);
         slGainI[3]->SetMeterSlot(1);
-        slGainICombined = new FaderStrip(sp, minGain, maxGain, FaderStrip::FS_INPUT, 80, true);
+        slGainICombined = new FaderStrip(sp, minGain, maxGainI, FaderStrip::FS_INPUT, 80, true);
 
         btnLink = new CustomButton(sp, "Link", true, QSize(30, 16), COL_BLUE, ICON_NONE, BTN_TEXT);
         place(btnLink, 35, 45, 30, 16);
@@ -1849,9 +1851,9 @@ public:
         cbMuteR = mkBtn(splitBtns, "M", COL_MUTE, 17, 20, 15, 16);
         cbPhaseR = mkBtn(splitBtns, QString::fromUtf8("ø"), COL_PHASE, 17, 40, 15, 16);
 
-        auto *knobC = new KnobControl(sp, "Gain", 0, maxGain, 0, QSize(64, 80), true);
-        auto *knobL = new KnobControl(sp, "Gain", 0, maxGain, 0, QSize(46, 62), true);
-        auto *knobR = new KnobControl(sp, "Gain", 0, maxGain, 0, QSize(46, 62), true);
+        auto *knobC = new KnobControl(sp, "Gain", 0, maxGainI, 0, QSize(64, 80), true);
+        auto *knobL = new KnobControl(sp, "Gain", 0, maxGainI, 0, QSize(46, 62), true);
+        auto *knobR = new KnobControl(sp, "Gain", 0, maxGainI, 0, QSize(46, 62), true);
         for (auto *k : {knobC, knobL, knobR})
           k->SetRingWidth(5);
         place(knobC, 18, 192, 64, 80);
