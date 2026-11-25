@@ -1,0 +1,2 @@
+# Topping audio interfaces: let the logged-in user open /dev/hidraw* (tpmix)
+KERNEL=="hidraw*", ATTRS{idVendor}=="152a", TAG+="uaccess"

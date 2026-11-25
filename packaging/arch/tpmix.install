@@ -1,0 +1,10 @@
+post_install() {
+  udevadm control --reload 2>/dev/null || true
+  udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
+  echo "==> Replug your Topping interface if tpmix starts in demo mode."
+}
+
+post_upgrade() {
+  udevadm control --reload 2>/dev/null || true
+  udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
+}

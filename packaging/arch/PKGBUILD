@@ -1,0 +1,38 @@
+# Maintainer: Le-JC
+pkgname=tpmix-git
+pkgver=r59.187485a
+pkgrel=1
+pkgdesc="Mixer control GUI for Topping audio interfaces (E4X4, E2X2, E1X2 OTG)"
+arch=('x86_64')
+url="https://github.com/Le-JC/tpmix"
+license=('GPL-3.0-or-later')
+depends=('qt6-base' 'hidapi' 'gcc-libs' 'glibc')
+makedepends=('git' 'pkgconf')
+provides=('tpmix')
+conflicts=('tpmix')
+source=("tpmix::git+https://github.com/Le-JC/tpmix.git")
+sha256sums=('SKIP')
+install=tpmix.install
+
+pkgver() {
+  cd tpmix
+  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+build() {
+  cd tpmix
+  # the repo tracks a prebuilt binary; drop it so we always build from source
+  make clean
+  make
+}
+
+package() {
+  cd tpmix
+  install -Dm755 tpmix "$pkgdir/usr/bin/tpmix"
+  install -Dm644 packaging/tpmix.desktop "$pkgdir/usr/share/applications/tpmix.desktop"
+  install -Dm644 packaging/tpmix.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/tpmix.svg"
+  install -Dm644 packaging/arch/70-topping.rules "$pkgdir/usr/lib/udev/rules.d/70-topping.rules"
+  install -Dm644 LICENSE.md "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 topping.e4x4.hid.md "$pkgdir/usr/share/doc/$pkgname/topping.e4x4.hid.md"
+}

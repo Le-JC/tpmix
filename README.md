@@ -52,6 +52,16 @@ chmod +x tpmix-x86_64.AppImage
 
 The AppImage is built on Ubuntu 24.04, so it needs glibc 2.39 or later. Build one yourself with `packaging/appimage.sh`.
 
+### Arch Linux (makepkg)
+
+```
+git clone https://github.com/Le-JC/tpmix.git
+cd tpmix/packaging/arch
+makepkg -si
+```
+
+This builds the latest `main` (`tpmix-git`) and installs the binary, desktop entry, icon and the udev rule from "Device access" below, so no manual udev setup is needed.
+
 ### From source
 
 ```

@@ -14,7 +14,7 @@ LDLIBS += -pthread
 all: tpmix
 
 tpmix: tpmix.cpp
-	g++  $< $(CXXFLAGS) $(LDLIBS) -o $@
+	g++  $< $(CXXFLAGS) $(LDFLAGS) $(LDLIBS) -o $@
 
 clean:
 	rm -fv tpmix
