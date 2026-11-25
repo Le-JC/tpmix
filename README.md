@@ -63,6 +63,15 @@ makepkg -si
 
 This builds the latest `main` (`tpmix-git`) and installs the binary, desktop entry, icon and the udev rule from "Device access" below, so no manual udev setup is needed.
 
+### E4X4 loopbacks as PipeWire sources
+
+The E4X4 records as one 10-channel source (IN1–4, then Loopback 1–6). `packaging/pipewire/90-tpmix-e4x4-loopbacks.conf` splits the loopbacks into three stereo sources, "E4x4 Loopback 1+2 / 3+4 / 5+6", usable from OBS, Discord, etc. It needs the "Pro Audio" profile on the E4X4 card.
+
+- Arch package: installed to `/usr/share/pipewire/pipewire.conf.d/`.
+- Manually: copy it to `~/.config/pipewire/pipewire.conf.d/`.
+
+Then `systemctl --user restart pipewire`.
+
 ### From source
 
 ```
