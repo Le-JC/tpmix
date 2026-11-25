@@ -30,6 +30,7 @@
 #include <tuple>
 
 #include <QtWidgets>
+#include <QSettings>
 
 #include <hidapi/hidapi.h>
 #include <inttypes.h>
@@ -61,6 +62,7 @@ uint32_t read32BE(uint8_t *buf) {
 
 double g_uiScale = 1.0;
 bool g_dryRun = false; // --dry-run / TPMIX_DRY_RUN: log HID writes, never send them
+bool g_startInTray = false; // --tray: start hidden, tray behaviour forced on
 
 // Gain calculation class
 class Gain {
@@ -1498,10 +1500,21 @@ static void setAutostart(bool on) {
               .toUtf8());
 }
 
+// keeps the window alive in the tray when closed (QSettings, independent of
+// the workspace autosave setting)
+static bool trayEnabledPref() {
+  return QSettings("tpmix", "tpmix").value("trayEnabled", true).toBool();
+}
+
+static void setTrayEnabledPref(bool on) {
+  QSettings("tpmix", "tpmix").setValue("trayEnabled", on);
+}
+
 class SettingsDialog : public QDialog {
 public:
   SettingsDialog(QWidget *parent, uint16_t pid, ToppingHID *hid,
-                 std::function<void()> onReset)
+                 std::function<void()> onReset,
+                 std::function<void(bool)> onTrayChanged)
       : QDialog(parent), m_hid(hid) {
     setWindowTitle("Settings");
     auto *mainSizer = vbox(this, 8, 0);
@@ -1526,6 +1539,18 @@ public:
     cbAutostart->setChecked(QFile::exists(autostartFile()));
     connect(cbAutostart, &QCheckBox::clicked, this, [](bool on) { setAutostart(on); });
     leftCol->addWidget(cbAutostart);
+    auto *cbTray = new QCheckBox("Keep running in system tray when closed", this);
+    cbTray->setChecked(trayEnabledPref());
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+      cbTray->setEnabled(false);
+      cbTray->setToolTip("No system tray available on this desktop.");
+    }
+    connect(cbTray, &QCheckBox::clicked, this, [onTrayChanged](bool on) {
+      setTrayEnabledPref(on);
+      if (onTrayChanged)
+        onTrayChanged(on);
+    });
+    leftCol->addWidget(cbTray);
     leftCol->addStretch(1);
     cols->addLayout(leftCol, 1);
 
@@ -2296,6 +2321,13 @@ public:
   QLabel *valWork;
 
   TPMixer();
+
+  bool trayActive() const { return tray && (g_startInTray || trayEnabledPref()); }
+  void applyTrayPref() {
+    if (tray)
+      tray->setVisible(g_startInTray || trayEnabledPref());
+  }
+
   ~TPMixer() override {
     stopHidReader();
     delete hid;
@@ -2641,7 +2673,8 @@ protected:
   void OnResetDefaults();
 
   void OnSettings() {
-    SettingsDialog dlg(this, hid->pid, hid, [this] { OnResetDefaults(); });
+    SettingsDialog dlg(this, hid->pid, hid, [this] { OnResetDefaults(); },
+                       [this](bool) { applyTrayPref(); });
     ScaleUIElements(&dlg, g_uiScale);
     dlg.exec();
   }
@@ -2717,7 +2750,7 @@ TPMixer::TPMixer() : QWidget(nullptr) {
               else
                 showWin();
             });
-    tray->show();
+    applyTrayPref();
   }
   // hidden-in-tray quits (tray menu, logout) never reach closeEvent
   connect(qApp, &QCoreApplication::aboutToQuit, this, [this] { shutdown(); });
@@ -3957,7 +3990,7 @@ void TPMixer::shutdown() {
 }
 
 void TPMixer::closeEvent(QCloseEvent *event) {
-  if (tray && !quitting) {
+  if (trayActive() && !quitting) {
     hide();
     event->ignore();
     return;
@@ -4158,6 +4191,7 @@ int main(int argc, char **argv) {
   app.setQuitOnLastWindowClosed(false);
   bool startInTray = app.arguments().contains("--tray") &&
                      QSystemTrayIcon::isSystemTrayAvailable();
+  g_startInTray = startInTray;
 
   // dry-run must be known before TPMixer is constructed, since it sends
   // packets during startup
