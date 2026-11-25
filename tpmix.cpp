@@ -2100,19 +2100,39 @@ public:
   CustomButton *btnAUX[2] = {};
   CustomButton *btnPhoneIcon[2] = {};
 
-  KnobControl *mixKnob;
-  CustomButton *btnPhoneGain;
-  QComboBox *choicePhoneOut;
-  QLabel *lblMixVal;
+  KnobControl *mixKnob[2] = {};
+  CustomButton *btnPhoneGain[2] = {};
+  QLabel *lblMixVal[2] = {};
+  QComboBox *choicePhoneOut = nullptr;
+  // E4X4: one Monitor Mix strip per headphone output, no phone combo
+  bool twoMonitorStrips = false;
 
   int32_t outLevelVal[N_OUTPUTS * 2];
   int m_phoneMix[2] = {0, 0};
   bool m_phoneGain[2] = {false, false};
 
-  void updatePhoneMixLabel(int val) {
+  // strip slot showing the given phone, -1 when it is not on screen
+  int slotFor(int phoneIdx) const {
+    if (twoMonitorStrips)
+      return phoneIdx;
+    if (choicePhoneOut && choicePhoneOut->currentIndex() == phoneIdx)
+      return 0;
+    return -1;
+  }
+
+  // phone edited by the given strip slot
+  int selectedPhone(int slot) const {
+    if (twoMonitorStrips)
+      return slot;
+    return choicePhoneOut ? choicePhoneOut->currentIndex() : 0;
+  }
+
+  void updatePhoneMixLabel(int slot, int val) {
     int inputPct = 50 - val / 2;
     int playPct = 50 + val / 2;
-    lblMixVal->setText(qs(std::format("Level: {}/{}", inputPct, playPct)));
+    if (lblMixVal[slot])
+      lblMixVal[slot]->setText(
+          qs(std::format("Level: {}/{}", inputPct, playPct)));
   }
 
   PanelOutputs(QWidget *parent, uint16_t pid = 0x8754) : QWidget(parent) {
@@ -2166,31 +2186,45 @@ public:
       stripsSizer->addWidget(s.panel);
     }
 
-    // Frame_OM1: Monitor Mix
-    QLabel *monTitle;
-    QWidget *mm = mkStrip(this, monTitle, "Monitor Mix", 254);
-    mixKnob = new KnobControl(mm, "Mix", -100, 100, 0, QSize(100, 66));
-    place(mixKnob, 0, 30, 100, 66);
-    place(mkPxLabel(mm, "Input", 10, COL_TITLE), 5, 94, 35, 25);
-    place(mkPxLabel(mm, "Playback", 10, COL_TITLE), 45, 94, 55, 25);
-    choicePhoneOut = new FlatCombo(mm, "boxCombo");
-    choicePhoneOut->addItems({"Phone 1", "Phone 2"});
-    place(choicePhoneOut, 0, 126, 100, 20);
-    lblMixVal = mkPxLabel(mm, "Level: 0dBu", 10, COL_TITLE);
-    place(lblMixVal, 0, 170, 100, 20);
-    btnPhoneGain = mkBtn(mm, "Gain", COL_GAIN_ON, 20, 207, 60, 20);
-    btnPhoneGain->SetFontPx(11);
-    mixKnob->setEnabled(pid == 0x8754);
+    // Frame_OM1: Monitor Mix (E4X4: one strip per headphone output)
+    twoMonitorStrips = (pid == 0x8754);
     stripsSizer->addStretch(1);
-    stripsSizer->addWidget(mm);
+    for (int s = 0; s < (twoMonitorStrips ? 2 : 1); ++s) {
+      QLabel *monTitle;
+      QWidget *mm =
+          mkStrip(this, monTitle,
+                  twoMonitorStrips ? QString("Monitor Mix %1").arg(s + 1)
+                                   : QString("Monitor Mix"),
+                  254);
+      mixKnob[s] = new KnobControl(mm, "Mix", -100, 100, 0, QSize(100, 66));
+      place(mixKnob[s], 0, 30, 100, 66);
+      place(mkPxLabel(mm, "Input", 10, COL_TITLE), 5, 94, 35, 25);
+      place(mkPxLabel(mm, "Playback", 10, COL_TITLE), 45, 94, 55, 25);
+      if (twoMonitorStrips) {
+        place(mkPxLabel(mm, QString("Phone %1").arg(s + 1), 10, COL_TITLE), 0,
+              126, 100, 20);
+      } else {
+        choicePhoneOut = new FlatCombo(mm, "boxCombo");
+        choicePhoneOut->addItems({"Phone 1", "Phone 2"});
+        place(choicePhoneOut, 0, 126, 100, 20);
+      }
+      lblMixVal[s] = mkPxLabel(mm, "Level: 0dBu", 10, COL_TITLE);
+      place(lblMixVal[s], 0, 170, 100, 20);
+      btnPhoneGain[s] = mkBtn(mm, "Gain", COL_GAIN_ON, 20, 207, 60, 20);
+      btnPhoneGain[s]->SetFontPx(11);
+      mixKnob[s]->setEnabled(pid == 0x8754);
+      stripsSizer->addWidget(mm);
+    }
 
-    connect(choicePhoneOut, &QComboBox::activated, this, [this](int idx) {
-      if (idx < 0)
-        return;
-      mixKnob->SetValue(m_phoneMix[idx]);
-      updatePhoneMixLabel(m_phoneMix[idx]);
-      btnPhoneGain->SetValue(m_phoneGain[idx]);
-    });
+    if (choicePhoneOut) {
+      connect(choicePhoneOut, &QComboBox::activated, this, [this](int idx) {
+        if (idx < 0)
+          return;
+        mixKnob[0]->SetValue(m_phoneMix[idx]);
+        updatePhoneMixLabel(0, m_phoneMix[idx]);
+        btnPhoneGain[0]->SetValue(m_phoneGain[idx]);
+      });
+    }
   }
 };
 
@@ -2616,8 +2650,8 @@ protected:
   void OnOutputToggle(int32_t id, int32_t val);
   void OnLoopVolume(int32_t id);
   void OnLoopToggle(int32_t id, int32_t val);
-  void OnPhoneMix(int32_t val);
-  void OnPhoneGain(int32_t val);
+  void OnPhoneMix(int slot, int32_t val);
+  void OnPhoneGain(int slot, int32_t val);
   void OnInputPeak(int32_t id);
   void OnLinkToggle(int32_t id);
   void OnMixVolumeChanged(int stripIdx);
@@ -2851,14 +2885,22 @@ TPMixer::TPMixer() : QWidget(nullptr) {
     }
   }
 
-  panelOutputs->mixKnob->onChange = [this](int v) { OnPhoneMix(v); };
-  panelOutputs->btnPhoneGain->onClick = [this](bool on) { OnPhoneGain(on); };
+  for (int s = 0; s < 2; ++s) {
+    if (!panelOutputs->mixKnob[s])
+      continue;
+    panelOutputs->mixKnob[s]->onChange = [this, s](int v) { OnPhoneMix(s, v); };
+    panelOutputs->btnPhoneGain[s]->onClick = [this, s](bool on) {
+      OnPhoneGain(s, on);
+    };
+  }
 
   if (hid->pid == 0x8755 || hid->pid == 0x8756) {
     panelMixers->lbTitle[0]->setText(hid->pid == 0x8755 ? "Analog IN" : "IN 1+2");
     panelMixers->lbTitle[1]->setText("Mobile IN");
   } else if (hid->pid == 0x8752) {
     panelMixers->lbTitle[1]->setText("Unused");
+  } else if (hid->pid == 0x8754) {
+    panelMixers->lbTitle[1]->setText("IN3+4");
   }
 
   // original MainWindow_* sizes; grow only if the content needs more
@@ -3094,16 +3136,18 @@ void TPMixer::scbUpdateLevels(uint16_t ch16, int32_t val) {
         }
       } else if (subCh == 2) {
         panelOutputs->m_phoneGain[phoneIdx] = val ? true : false;
-        if (panelOutputs->choicePhoneOut->currentIndex() == phoneIdx) {
-          panelOutputs->btnPhoneGain->SetValue(val ? true : false);
+        int slot = panelOutputs->slotFor(phoneIdx);
+        if (slot >= 0) {
+          panelOutputs->btnPhoneGain[slot]->SetValue(val ? true : false);
         }
         hid->settings[ch16] = val;
       } else if (subCh == 3) {
         int phoneMix = (val - 50) * 2;
         panelOutputs->m_phoneMix[phoneIdx] = phoneMix;
-        if (panelOutputs->choicePhoneOut->currentIndex() == phoneIdx) {
-          panelOutputs->mixKnob->SetValue(phoneMix);
-          panelOutputs->updatePhoneMixLabel(phoneMix);
+        int slot = panelOutputs->slotFor(phoneIdx);
+        if (slot >= 0) {
+          panelOutputs->mixKnob[slot]->SetValue(phoneMix);
+          panelOutputs->updatePhoneMixLabel(slot, phoneMix);
         }
         hid->settings[ch16] = val;
       }
@@ -3675,11 +3719,13 @@ void TPMixer::refreshOutputUi() {
       panelOutputs->m_phoneMix[phoneIdx] = (hid->settings[keyMix] - 50) * 2;
     }
   }
-  int curPhone = panelOutputs->choicePhoneOut->currentIndex();
-  if (curPhone >= 0) {
-    panelOutputs->mixKnob->SetValue(panelOutputs->m_phoneMix[curPhone]);
-    panelOutputs->btnPhoneGain->SetValue(panelOutputs->m_phoneGain[curPhone]);
-    panelOutputs->updatePhoneMixLabel(panelOutputs->m_phoneMix[curPhone]);
+  for (int p = 0; p < 2; ++p) {
+    int slot = panelOutputs->slotFor(p);
+    if (slot < 0)
+      continue;
+    panelOutputs->mixKnob[slot]->SetValue(panelOutputs->m_phoneMix[p]);
+    panelOutputs->btnPhoneGain[slot]->SetValue(panelOutputs->m_phoneGain[p]);
+    panelOutputs->updatePhoneMixLabel(slot, panelOutputs->m_phoneMix[p]);
   }
 
   auto setFromKey = [&](CustomButton *b, uint16_t key) {
@@ -3879,18 +3925,18 @@ void TPMixer::OnLoopToggle(int32_t id, int32_t val) {
   }
 }
 
-void TPMixer::OnPhoneMix(int32_t val) {
-  int idx = panelOutputs->choicePhoneOut->currentIndex();
-  if (idx < 0)
+void TPMixer::OnPhoneMix(int slot, int32_t val) {
+  int idx = panelOutputs->selectedPhone(slot);
+  if (idx < 0 || idx > 1)
     return;
   panelOutputs->m_phoneMix[idx] = val;
-  panelOutputs->updatePhoneMixLabel(val);
+  panelOutputs->updatePhoneMixLabel(slot, val);
   hid->setPhoneMix(idx, val);
 }
 
-void TPMixer::OnPhoneGain(int32_t val) {
-  int idx = panelOutputs->choicePhoneOut->currentIndex();
-  if (idx < 0)
+void TPMixer::OnPhoneGain(int slot, int32_t val) {
+  int idx = panelOutputs->selectedPhone(slot);
+  if (idx < 0 || idx > 1)
     return;
   panelOutputs->m_phoneGain[idx] = val ? true : false;
   hid->setPhoneGainBoost(idx, val);
